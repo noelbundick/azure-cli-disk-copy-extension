@@ -12,11 +12,13 @@ class DiskCopyCommandsLoader(AzCommandsLoader):
 
     def load_command_table(self, args):
         with self.command_group('disk') as g:
-            from .validators import validate_disk_copy
+            from ._validators import validate_disk_copy
             g.custom_command('copy', 'disk_copy', validator=validate_disk_copy)
         return self.command_table
 
     def load_arguments(self, command):
-        pass
+        with self.argument_context('disk copy') as c:
+            c.ignore('source_type')
+            c.ignore('target_type')
 
 COMMAND_LOADER_CLS = DiskCopyCommandsLoader
