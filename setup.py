@@ -27,14 +27,14 @@ CLASSIFIERS = [
 DEPENDENCIES = []
 
 setup(
-    name='myexampleextension',
+    name='disk-copy-extension',
     version=VERSION,
-    description='An Azure CLI Extension.',
-    long_description='An example Azure CLI Extension.',
+    description='An Azure CLI extension that copies VM disks.',
+    long_description='An Azure CLI extension that copies VM disks.',
     license='MIT',
-    author='MY CORP.',
-    author_email='example@contoso.com',
-    url='https://github.com/ORG/REPO',
+    author='Noel Bundick',
+    author_email='nobun@microsoft.com',
+    url='https://github.com/noelbundick/azure-cli-disk-copy-extension',
     classifiers=CLASSIFIERS,
     packages=find_packages(),
     install_requires=DEPENDENCIES
