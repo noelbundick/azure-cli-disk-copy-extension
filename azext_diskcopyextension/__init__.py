@@ -2,6 +2,8 @@ from azure.cli.core import AzCommandsLoader
 
 from ._help import helps
 
+from ._validators import validate_copy_vhd_to_disk
+
 class DiskCopyCommandsLoader(AzCommandsLoader):
 
     def __init__(self, cli_ctx=None):
@@ -13,7 +15,7 @@ class DiskCopyCommandsLoader(AzCommandsLoader):
     def load_command_table(self, args):
         with self.command_group('storage blob') as g:
             g.custom_command('copy-to-vhd', 'copy_vhd_to_vhd')
-            g.custom_command('copy-to-disk', 'copy_vhd_to_disk', validator=copy_vhd_to_disk)
+            g.custom_command('copy-to-disk', 'copy_vhd_to_disk', validator=validate_copy_vhd_to_disk)
         with self.command_group('disk') as g:
             g.custom_command('copy-to-vhd', 'copy_disk_to_vhd')
             g.custom_command('copy-to-disk', 'copy_disk_to_disk')
