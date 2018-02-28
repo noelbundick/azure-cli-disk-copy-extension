@@ -11,6 +11,13 @@ helps['storage blob copy-to-disk'] = """
           type: string
           short-summary: Unmanaged disk blob URL
           long-summary: A URL that specifies the location of an unmanaged disk blob.
+        - name: --resource-group -g
+          type: string
+          short-summary: Name of resource group
+          long-summary: The name of the resource group where the new Managed Disk should be created
+        - name: --sku
+          type: string
+          short-summary: Underlying storage SKU
     examples:
         - name: Copy an unmanaged disk to a Managed Disk
           text: >

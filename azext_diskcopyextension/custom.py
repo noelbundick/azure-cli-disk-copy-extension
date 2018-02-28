@@ -87,8 +87,6 @@ def create_disk_from_blob(blob_uri, resource_group_name, disk_name, disk_sku):
                   '--sku', disk_sku,
                   '--source', blob_uri])
   return disk
-  # DESTINATION_MANAGED_DISK=${SOURCE_BLOB%.vhd}     # Name the managed disk the same as the source blob
-  # DESTINATION_MANAGED_DISK_ID=$(az disk create -n $DESTINATION_MANAGED_DISK -g $DESTINATION_RESOURCEGROUP --source $DESTINATION_MANAGED_DISK_SOURCE --query 'id' -o tsv)
 
 def create_or_use_storage_account(storage_account_name, resource_group_name):
   logger.info('Retrieving details for storage account %s', storage_account_name)
@@ -131,8 +129,6 @@ def start_blob_copy(source_resource_group, source_storage_account_name, source_c
   return blob_copy
 
 def get_storage_blob(blob_uri):
-  # BLOB_COPY_STATUS=$(az storage blob show --account-name $DESTINATION_STORAGEACCOUNT --account-key $DESTINATION_STORAGEACCOUNT_KEY -c $DESTINATION_STORAGEACCOUNT_CONTAINER -n $SOURCE_BLOB --query 'properties.copy.status' -o tsv)
-
   blob_match = blob_regex.match(blob_uri)
   storage_account_name = blob_match.group('storage_account')
   storage_container = blob_match.group('container')
@@ -149,8 +145,9 @@ def get_storage_blob(blob_uri):
 def copy_vhd_to_vhd(source_vhd_uri, target_storage_account_name, target_storage_container_name, target_vhd_name):
   raise NotImplementedError('VHD:VHD copy not implemented yet')
   
-def copy_vhd_to_disk(source_vhd_uri, target_resource_group_name, target_disk_name):
+def copy_vhd_to_disk(source_vhd_uri, target_resource_group_name, target_disk_name, target_disk_sku=None):
   #TODO: allow optional standard/premium
+  #TODO: make target_disk_name optional
   #TODO: allow optional temp storage acct in target region
 
   #TODO: move these to a validator
@@ -167,12 +164,13 @@ def copy_vhd_to_disk(source_vhd_uri, target_resource_group_name, target_disk_nam
   source_storage_acct_name = blob_match.group('storage_account')
   source_storage_acct = assert_storage_account(source_storage_acct_name)
 
-  # Create disk with same tier as storage account
-  source_storage_acct_tier = source_storage_acct['sku']['tier']
-  if source_storage_acct_tier == 'Premium':
-    target_disk_sku = 'Premium_LRS'
-  else:
-    target_disk_sku = 'Standard_LRS'
+  # Use same tier as storage account if no SKU provided
+  if target_disk_sku is None:
+    source_storage_acct_tier = source_storage_acct['sku']['tier']
+    if source_storage_acct_tier == 'Premium':
+      target_disk_sku = 'Premium_LRS'
+    else:
+      target_disk_sku = 'Standard_LRS'
 
   if source_storage_acct['location'].lower() == target_rg['location'].lower():
     logger.info('Copying within the same region (%s)', source_storage_acct['location'])
@@ -199,6 +197,7 @@ def copy_vhd_to_disk(source_vhd_uri, target_resource_group_name, target_disk_nam
     while True:
       temp_blob = get_storage_blob(temp_blob_uri)
       copy_status = temp_blob['properties']['copy']['status']
+      # TODO: give better status - percent or number of bytes/blocks
       logger.info('%s: Waiting for %s to copy. Current status is %s', time.ctime(), temp_blob['name'], copy_status)
       if copy_status == 'success':
         break
