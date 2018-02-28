@@ -1,7 +1,8 @@
 import random
+import time
 
 import re
-vhd_regex=re.compile('https://(?P<storage_account>.*).blob.core.windows.net/(?P<container>.*)/(?P<blob>.*)')
+blob_regex=re.compile('https://(?P<storage_account>.*).blob.core.windows.net/(?P<container>.*)/(?P<blob>.*)')
 
 from .cli_utils import az_cli
 
@@ -9,7 +10,7 @@ from knack.util import CLIError
 from knack.log import get_logger
 logger = get_logger(__name__)
 
-def get_resource_group(resource_group_name):
+def assert_resource_group(resource_group_name):
   logger.info('Retrieving details for resource group %s', resource_group_name)
   resource_group = az_cli(['group', 'show',
                             '-n', resource_group_name])
@@ -18,7 +19,7 @@ def get_resource_group(resource_group_name):
   
   return resource_group
 
-def get_storage_account(storage_account_name):
+def assert_storage_account(storage_account_name):
   logger.info('Retrieving details for storage account %s', storage_account_name)
   storage_account = az_cli(['storage', 'account', 'list',
                             '--query', "[?name=='{0}'] | [0]".format(storage_account_name)])
@@ -27,10 +28,28 @@ def get_storage_account(storage_account_name):
   
   return storage_account
 
+def get_disk(resource_group_name, disk_name):
+  logger.info('Retrieving details for disk %s', disk_name)
+  disk = az_cli(['disk', 'show',
+                  '-n', disk_name,
+                  '-g', resource_group_name])
+  return disk
+
 def create_blob_snapshot(blob_uri):
-  # echo "Creating snapshot for vhd $SOURCE_BLOB"
-  # SOURCE_SNAPSHOT=$(az storage blob snapshot -c $SOURCE_STORAGEACCOUNT_CONTAINER -n $SOURCE_BLOB --account-name $SOURCE_STORAGEACCOUNT --account-key $SOURCE_STORAGEACCOUNT_KEY --query snapshot -o tsv)
-  pass
+  logger.info('Creating blob snapshot for %s', blob_uri)
+  
+  blob_match = blob_regex.match(blob_uri)
+  storage_account_name = blob_match.group('storage_account')
+  storage_container = blob_match.group('container')
+  blob_name = blob_match.group('blob')
+
+  env = {}
+  env['AZURE_STORAGE_ACCOUNT'] = storage_account_name
+  #TODO: make sure to clean up snapshot
+  blob_snapshot = az_cli(['storage', 'blob', 'snapshot',
+                          '-c', storage_container,
+                          '-n', blob_name], env=env)
+  return blob_snapshot
 
 def create_snapshot_from_blob(snapshot_name, resource_group_name, blob_uri):
   logger.info('Creating snapshot for %s', blob_uri)
@@ -41,61 +60,60 @@ def create_snapshot_from_blob(snapshot_name, resource_group_name, blob_uri):
                       '--source', blob_uri])
   return snapshot
 
-def create_disk_from_snapshot(snapshot_id, resource_group_name, disk_name):
+def create_disk_from_snapshot(snapshot_id, resource_group_name, disk_name, disk_sku):
   logger.info('Creating Managed Disk from snapshot %s', snapshot_id)
   disk = az_cli(['disk', 'create',
                   '-n', disk_name,
                   '-g', resource_group_name,
+                  '--sku', disk_sku,
                   '--source', snapshot_id])
   return disk
 
-def copy_vhd_to_vhd(source_vhd_uri, target_storage_account_name, target_storage_container_name, target_vhd_name):
-  raise NotImplementedError('VHD:VHD copy not implemented yet')
-  
-def copy_vhd_to_disk(source_vhd_uri, target_resource_group_name, target_disk_name):
-  #TODO: move these to a validator
-  target_rg = get_resource_group(target_resource_group_name)
-  
-  vhd_match = vhd_regex.match(source_vhd_uri)
-  if not vhd_match:
-    raise CLIError('--source-uri did not match format of a blob URL')
-  
-  #TODO: Ensure target disk does not already exist
-  
-  source_storage_acct_name = vhd_match.group('storage_account')
-  source_storage_acct = get_storage_account(source_storage_acct_name)
-  #TODO: Get Standard/Premium from storage acct & create disk with same sku
+def create_disk_from_blob(blob_uri, resource_group_name, disk_name, disk_sku):
+  # echo "Creating Managed Disk from vhd $SOURCE_BLOB"
+  # DESTINATION_MANAGED_DISK=${SOURCE_BLOB%.vhd}     # Name the managed disk the same as the source blob
+  # DESTINATION_MANAGED_DISK_ID=$(az disk create -n $DESTINATION_MANAGED_DISK -g $DESTINATION_RESOURCEGROUP --source $DESTINATION_MANAGED_DISK_SOURCE --query 'id' -o tsv)
+  pass
 
-  if source_storage_acct['location'].lower() == target_rg['location'].lower():
-    logger.info('Copying within the same region (%s)', source_storage_acct['location'])
-    snapshot_name = 'snapshot_{0}'.format(random.randint(0, 100000))
-    snapshot = create_snapshot_from_blob(snapshot_name, source_storage_acct['resourceGroup'], source_vhd_uri)
-    disk = create_disk_from_snapshot(snapshot['id'], target_resource_group_name, target_disk_name)
-    return disk
-  else:
-    logger.info('Performing a cross-region copy (%s to %s)', source_storage_acct['location'], target_rg['location'])
-    source_container = vhd_match.group('container')
-    source_blob = vhd_match.group('blob')
+def create_or_use_storage_account(storage_account_name, resource_group_name):
+  logger.info('Retrieving details for storage account %s', storage_account_name)
+  storage_account = az_cli(['storage', 'account', 'list',
+                            '--query', "[?name=='{0}'] | [0]".format(storage_account_name)])
+  if storage_account:
+    return storage_account
 
-    # echo "Creating snapshot for vhd $SOURCE_BLOB"
-    # SOURCE_SNAPSHOT=$(az storage blob snapshot -c $SOURCE_STORAGEACCOUNT_CONTAINER -n $SOURCE_BLOB --account-name $SOURCE_STORAGEACCOUNT --account-key $SOURCE_STORAGEACCOUNT_KEY --query snapshot -o tsv)
-    
-    # if [ "$DESTINATION_STORAGE_ACCOUNT_CREATED" = true ]; then
-    #   echo "Destination storage account $DESTINATION_STORAGEACCOUNT already created"
-    # else
-    #   # Create dynamically named storage account to copy blob
-    #   #TODO: allow specifying temp storage acct
-    #   echo "Creating storage account $DESTINATION_STORAGEACCOUNT"
-    #   DESTINATION_STORAGEACCOUNT="vhdmigration$(cat /dev/urandom | env LC_CTYPE=C tr -dc 'a-z0-9' | fold -w 10 | head -n 1)"
-    #   az storage account create -n $DESTINATION_STORAGEACCOUNT -g $DESTINATION_RESOURCEGROUP -l $DESTINATION_RESOURCEGROUP_REGION --sku Standard_LRS
-    #   DESTINATION_STORAGE_ACCOUNT_CREATED=true
-    #   DESTINATION_STORAGEACCOUNT_KEY=$(az storage account keys list -g $DESTINATION_RESOURCEGROUP -n $DESTINATION_STORAGEACCOUNT --query '[0].value' -o tsv)
+  logger.info('Creating storage account %s', storage_account_name)
+  storage_account = az_cli(['storage', 'account', 'create',
+                            '-n', storage_account_name,
+                            '-g', resource_group_name,
+                            '--sku', 'Standard_LRS',
+                            '--https-only', 'true',
+                            '--encryption-services', 'blob')
+  return storage_account
 
-    #   DESTINATION_STORAGEACCOUNT_CONTAINER=temp
-    #   az storage container create --name $DESTINATION_STORAGEACCOUNT_CONTAINER --account-key $DESTINATION_STORAGEACCOUNT_KEY --account-name $DESTINATION_STORAGEACCOUNT
-    # fi
+def start_blob_copy(source_resource_group, source_storage_account_name, source_storage_account_key, source_container, source_blob, source_snapshot, 
+                    target_storage_account_name):
+  logger.info('Copying %s to %s', source_blob, target_storage_account_name)
+  
+  source_storage_account_key = az_cli(['storage', 'account', 'keys', 'list',
+                                        '-n', source_storage_account_name,
+                                        '-g', source_resource_group)
+  
+  destination_container = source_container
+  destination_blob = source_blob
 
-    # # Copy snapshot to new blob (if moving regions)
+  env = {}
+  env['AZURE_STORAGE_ACCOUNT'] = target_storage_account_name
+  blob_copy = az_cli(['storage', 'blob', 'copy', 'start',
+                        '--source-account-name', source_storage_account_name,
+                        '--source-account-key', source_storage_account_key,
+                        '--source-container', source_container,
+                        '--source-blob', source_blob,
+                        '--source-snapshot', source_snapshot,
+                        '--destination-container', destination_container,
+                        '--destination-blob', destination_blob])
+  return blob_copy
+  # # Copy snapshot to new blob (if moving regions)
     # echo "Copying vhd snapshot $SOURCE_BLOB $SOURCE_SNAPSHOT"
     # az storage blob copy start \
     #   --source-account-name $SOURCE_STORAGEACCOUNT \
@@ -107,31 +125,81 @@ def copy_vhd_to_disk(source_vhd_uri, target_resource_group_name, target_disk_nam
     #   --account-name $DESTINATION_STORAGEACCOUNT \
     #   --account-key $DESTINATION_STORAGEACCOUNT_KEY \
     #   -c $DESTINATION_STORAGEACCOUNT_CONTAINER
-    
-    # DESTINATION_MANAGED_DISK_SOURCE="https://$DESTINATION_STORAGEACCOUNT.blob.core.windows.net/$DESTINATION_STORAGEACCOUNT_CONTAINER/$SOURCE_BLOB"
 
-    # # Wait for blob copy to finish
-    # BLOB_COPY_STATUS=$(az storage blob show --account-name $DESTINATION_STORAGEACCOUNT --account-key $DESTINATION_STORAGEACCOUNT_KEY -c $DESTINATION_STORAGEACCOUNT_CONTAINER -n $SOURCE_BLOB --query 'properties.copy.status' -o tsv)
-    # while [ "$BLOB_COPY_STATUS" != "success" ]; do
-    #   echo "$(date +"%F %T%z") Waiting for $SOURCE_BLOB to copy. Current status is $BLOB_COPY_STATUS"
-    #   sleep 5
-    #   BLOB_COPY_STATUS=$(az storage blob show --account-name $DESTINATION_STORAGEACCOUNT --account-key $DESTINATION_STORAGEACCOUNT_KEY -c $DESTINATION_STORAGEACCOUNT_CONTAINER -n $SOURCE_BLOB --query 'properties.copy.status' -o tsv)
-    # done
+def get_blob_copy(blob_uri):
+  # BLOB_COPY_STATUS=$(az storage blob show --account-name $DESTINATION_STORAGEACCOUNT --account-key $DESTINATION_STORAGEACCOUNT_KEY -c $DESTINATION_STORAGEACCOUNT_CONTAINER -n $SOURCE_BLOB --query 'properties.copy.status' -o tsv)
+  pass
 
-    # # TODO: Handle disks that already exist (but possibly from an older snapshot)
-    # # Create managed disks from snapshot (or copied blob if moving regions) in new RG
-    # echo "Creating Managed Disk from vhd $SOURCE_BLOB"
-    # DESTINATION_MANAGED_DISK=${SOURCE_BLOB%.vhd}     # Name the managed disk the same as the source blob
-    # DESTINATION_MANAGED_DISK_ID=$(az disk create -n $DESTINATION_MANAGED_DISK -g $DESTINATION_RESOURCEGROUP --source $DESTINATION_MANAGED_DISK_SOURCE --query 'id' -o tsv)
+def copy_vhd_to_vhd(source_vhd_uri, target_storage_account_name, target_storage_container_name, target_vhd_name):
+  raise NotImplementedError('VHD:VHD copy not implemented yet')
+  
+def copy_vhd_to_disk(source_vhd_uri, target_resource_group_name, target_disk_name):
+  #TODO: allow optional standard/premium
+  #TODO: allow optional temp storage acct in target region
 
-    # # Write map of VHD->managed disk to OUTPUT_FILE_PATH
-    # echo "$VHD:$DESTINATION_MANAGED_DISK_ID" >> $OUTPUT_FILE_PATH
-    logger.error('VHD:Managed Disk copy not implemented yet')
+  #TODO: move these to a validator
+  blob_match = blob_regex.match(source_vhd_uri)
+  if not blob_match:
+    raise CLIError('--source-uri did not match format of a blob URL')
+
+  target_disk = get_disk(target_resource_group_name, target_disk_name)
+  if target_disk:
+    raise CLIError('{0} already exists in resource group {1}. Cannot overwrite an existing disk'.format(target_disk_name, target_resource_group_name))
+
+  target_rg = assert_resource_group(target_resource_group_name)
+  
+  source_storage_acct_name = blob_match.group('storage_account')
+  source_storage_acct = assert_storage_account(source_storage_acct_name)
+
+  # Create disk with same tier as storage account
+  source_storage_acct_tier = source_storage_acct['sku']['tier']
+  if source_storage_acct_tier == 'Premium':
+    target_disk_sku = 'Premium_LRS'
+  else:
+    target_disk_sku = 'Standard_LRS'
+
+  if source_storage_acct['location'].lower() == target_rg['location'].lower():
+    logger.info('Copying within the same region (%s)', source_storage_acct['location'])
+
+    # Create a disk from a snapshot
+    snapshot_name = 'snapshot_{0}'.format(random.randint(0, 100000))
+    snapshot = create_snapshot_from_blob(snapshot_name, source_storage_acct['resourceGroup'], source_vhd_uri)
+    disk = create_disk_from_snapshot(snapshot['id'], target_resource_group_name, target_disk_name, target_disk_sku)
+    return disk
+  else:
+    logger.info('Performing a cross-region copy (%s to %s)', source_storage_acct['location'], target_rg['location'])
+
+    # Create a blob snapshot
+    blob_snapshot = create_blob_snapshot(source_vhd_uri)
+    blob_snapshot_uri = '{0}?snapshot={1}'.format(source_vhd_uri, blob_snapshot['snapshot'])
+
+    # Copy the blob snapshot to a temporary storage account
+    temp_storage_account_name = 'diskcopytemp{0}'.format(random.randint(0, 100000))
+    temp_storage_account = create_or_use_storage_account(temp_storage_account_name, target_resource_group_name)
+    temp_blob = start_blob_copy(blob_snapshot_uri, temp_storage_account)
+    temp_blob_container = source_container
+    temp_blob_uri ='https://{0}.blob.core.windows.net/{1}/{2}?snapshot={3}'.format(temp_blob)
+    # TODO: for very long running copies, it might be better to register a function + event grid listener, but this works to start
+    while True:
+      blob_copy_status = get_blob_copy(temp_blob_uri)['properties']['copy']['status']
+      logger.info('%s: Waiting for %s to copy. Current status is %s', time.ctime(), temp_blob, blob_copy_status)
+      if blob_copy_status == 'success':
+        break
+      time.sleep(5)
+
+    # Create a disk from the temporary blob
+    disk = create_disk_from_blob(temp_blob_uri)
+    return disk
+
+  # # Write map of VHD->managed disk to OUTPUT_FILE_PATH
+  # echo "$VHD:$DESTINATION_MANAGED_DISK_ID" >> $OUTPUT_FILE_PATH
+  #logger.error('VHD:Managed Disk copy not implemented yet')
 
 def copy_disk_to_vhd(source_resource_group_name, source_disk_name, target_storage_account_name, target_storage_container_name, target_vhd_name):
   raise NotImplementedError('Managed Disk:VHD copy not implemented yet')
 
 def copy_disk_to_disk(source_resource_group_name, source_disk_name, target_resource_group_name, target_disk_name):
+  #TODO: Ensure target disk does not already exist
   #!/bin/bash
 
   # #TODO: create named args

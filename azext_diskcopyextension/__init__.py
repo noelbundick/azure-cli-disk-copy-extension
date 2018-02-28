@@ -32,7 +32,7 @@ class DiskCopyCommandsLoader(AzCommandsLoader):
         with self.argument_context('storage blob copy-to-disk') as c:
             c.argument('source_vhd_uri', options_list=['--source-uri', '-u'])
         with self.argument_context('storage blob copy-to-disk', arg_group='Destination Disk') as c:
-            c.argument('target_resource_group_name', options_list=['--resource-group'])
-            c.argument('target_disk_name', options_list=['--disk-name'])
+            c.argument('target_resource_group_name', options_list=['--resource-group', '-g'])
+            c.argument('target_disk_name', options_list=['--disk-name', '-n'])
 
 COMMAND_LOADER_CLS = DiskCopyCommandsLoader

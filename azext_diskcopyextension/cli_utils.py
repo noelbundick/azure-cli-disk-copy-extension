@@ -12,15 +12,15 @@ from knack.util import CLIError
 from knack.log import get_logger
 logger = get_logger(__name__)
 
-def az_cli(cmd):
+def az_cli(cmd, env=None):
   cli_cmd = prepare_cli_command(cmd)
-  json_cmd_output = run_cli_command(cli_cmd)
+  json_cmd_output = run_cli_command(cli_cmd, env=env)
   return json_cmd_output
 
 # pylint: disable=inconsistent-return-statements
-def run_cli_command(cmd, return_as_json=True, empty_json_as_error=False):
+def run_cli_command(cmd, return_as_json=True, empty_json_as_error=False, env=None):
     try:
-        cmd_output = check_output(cmd, stderr=STDOUT, universal_newlines=True)
+        cmd_output = check_output(cmd, stderr=STDOUT, universal_newlines=True, env=env)
         logger.debug('command: %s ended with output: %s', cmd, cmd_output)
 
         if return_as_json:
