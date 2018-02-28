@@ -1,7 +1,6 @@
 from azure.cli.core import AzCommandsLoader
-
+from azure.cli.core.commands.parameters import get_enum_type
 from ._help import helps
-
 from ._validators import validate_copy_vhd_to_disk
 
 class DiskCopyCommandsLoader(AzCommandsLoader):
@@ -34,5 +33,6 @@ class DiskCopyCommandsLoader(AzCommandsLoader):
         with self.argument_context('storage blob copy-to-disk', arg_group='Destination Disk') as c:
             c.argument('target_resource_group_name', options_list=['--resource-group', '-g'])
             c.argument('target_disk_name', options_list=['--disk-name', '-n'])
+            c.argument('target_disk_sku', options_list=['--sku'], arg_type=get_enum_type(['Premium_LRS', 'Standard_LRS']))
 
 COMMAND_LOADER_CLS = DiskCopyCommandsLoader
