@@ -2,7 +2,7 @@ import random
 import time
 
 import re
-blob_regex=re.compile('https://(?P<storage_account>.*).blob.core.windows.net/(?P<container>.*)/(?P<blob>.*)')
+blob_regex = re.compile('https://(?P<storage_account>.*).blob.core.windows.net/(?P<container>.*)/(?P<blob>.*)')
 
 from .cli_utils import az_cli
 
@@ -34,6 +34,15 @@ def get_disk(resource_group_name, disk_name):
                   '-n', disk_name,
                   '-g', resource_group_name])
   return disk
+
+def create_blob_container(storage_account_name, container_name):
+  logger.info('Creating container %s in storage account %s', container_name, storage_account_name)
+  
+  env = {}
+  env['AZURE_STORAGE_ACCOUNT'] = storage_account_name
+  blob_container = az_cli(['storage', 'container', 'create',
+                          '-n', container_name], env=env)
+  return blob_container
 
 def create_blob_snapshot(blob_uri):
   logger.info('Creating blob snapshot for %s', blob_uri)
@@ -70,10 +79,16 @@ def create_disk_from_snapshot(snapshot_id, resource_group_name, disk_name, disk_
   return disk
 
 def create_disk_from_blob(blob_uri, resource_group_name, disk_name, disk_sku):
-  # echo "Creating Managed Disk from vhd $SOURCE_BLOB"
+  logger.info('Creating Managed Disk from blob %s', blob_uri)
+
+  disk = az_cli(['disk', 'create',
+                  '-n', disk_name,
+                  '-g', resource_group_name,
+                  '--sku', disk_sku,
+                  '--source', blob_uri])
+  return disk
   # DESTINATION_MANAGED_DISK=${SOURCE_BLOB%.vhd}     # Name the managed disk the same as the source blob
   # DESTINATION_MANAGED_DISK_ID=$(az disk create -n $DESTINATION_MANAGED_DISK -g $DESTINATION_RESOURCEGROUP --source $DESTINATION_MANAGED_DISK_SOURCE --query 'id' -o tsv)
-  pass
 
 def create_or_use_storage_account(storage_account_name, resource_group_name):
   logger.info('Retrieving details for storage account %s', storage_account_name)
@@ -88,16 +103,17 @@ def create_or_use_storage_account(storage_account_name, resource_group_name):
                             '-g', resource_group_name,
                             '--sku', 'Standard_LRS',
                             '--https-only', 'true',
-                            '--encryption-services', 'blob')
+                            '--encryption-services', 'blob'])
   return storage_account
 
-def start_blob_copy(source_resource_group, source_storage_account_name, source_storage_account_key, source_container, source_blob, source_snapshot, 
+def start_blob_copy(source_resource_group, source_storage_account_name, source_container, source_blob, source_snapshot, 
                     target_storage_account_name):
   logger.info('Copying %s to %s', source_blob, target_storage_account_name)
   
-  source_storage_account_key = az_cli(['storage', 'account', 'keys', 'list',
+  source_storage_account_keys = az_cli(['storage', 'account', 'keys', 'list',
                                         '-n', source_storage_account_name,
-                                        '-g', source_resource_group)
+                                        '-g', source_resource_group])
+  source_storage_account_key = source_storage_account_keys[0]['value']
   
   destination_container = source_container
   destination_blob = source_blob
@@ -111,24 +127,24 @@ def start_blob_copy(source_resource_group, source_storage_account_name, source_s
                         '--source-blob', source_blob,
                         '--source-snapshot', source_snapshot,
                         '--destination-container', destination_container,
-                        '--destination-blob', destination_blob])
+                        '--destination-blob', destination_blob], env=env)
   return blob_copy
-  # # Copy snapshot to new blob (if moving regions)
-    # echo "Copying vhd snapshot $SOURCE_BLOB $SOURCE_SNAPSHOT"
-    # az storage blob copy start \
-    #   --source-account-name $SOURCE_STORAGEACCOUNT \
-    #   --source-account-key $SOURCE_STORAGEACCOUNT_KEY \
-    #   --source-blob $SOURCE_BLOB \
-    #   --source-container $SOURCE_STORAGEACCOUNT_CONTAINER \
-    #   --source-snapshot $SOURCE_SNAPSHOT \
-    #   -b $SOURCE_BLOB \
-    #   --account-name $DESTINATION_STORAGEACCOUNT \
-    #   --account-key $DESTINATION_STORAGEACCOUNT_KEY \
-    #   -c $DESTINATION_STORAGEACCOUNT_CONTAINER
 
-def get_blob_copy(blob_uri):
+def get_storage_blob(blob_uri):
   # BLOB_COPY_STATUS=$(az storage blob show --account-name $DESTINATION_STORAGEACCOUNT --account-key $DESTINATION_STORAGEACCOUNT_KEY -c $DESTINATION_STORAGEACCOUNT_CONTAINER -n $SOURCE_BLOB --query 'properties.copy.status' -o tsv)
-  pass
+
+  blob_match = blob_regex.match(blob_uri)
+  storage_account_name = blob_match.group('storage_account')
+  storage_container = blob_match.group('container')
+  blob_name = blob_match.group('blob')
+
+  
+  env = {}
+  env['AZURE_STORAGE_ACCOUNT'] = storage_account_name
+  blob = az_cli(['storage', 'blob', 'show',
+                  '-c', storage_container,
+                  '-n', blob_name], env=env)
+  return blob
 
 def copy_vhd_to_vhd(source_vhd_uri, target_storage_account_name, target_storage_container_name, target_vhd_name):
   raise NotImplementedError('VHD:VHD copy not implemented yet')
@@ -171,24 +187,25 @@ def copy_vhd_to_disk(source_vhd_uri, target_resource_group_name, target_disk_nam
 
     # Create a blob snapshot
     blob_snapshot = create_blob_snapshot(source_vhd_uri)
-    blob_snapshot_uri = '{0}?snapshot={1}'.format(source_vhd_uri, blob_snapshot['snapshot'])
 
     # Copy the blob snapshot to a temporary storage account
+    # TODO: reuse a temp storage account if one isn't specified & one already exists in the target RG. Use tags
     temp_storage_account_name = 'diskcopytemp{0}'.format(random.randint(0, 100000))
     temp_storage_account = create_or_use_storage_account(temp_storage_account_name, target_resource_group_name)
-    temp_blob = start_blob_copy(blob_snapshot_uri, temp_storage_account)
-    temp_blob_container = source_container
-    temp_blob_uri ='https://{0}.blob.core.windows.net/{1}/{2}?snapshot={3}'.format(temp_blob)
+    create_blob_container(temp_storage_account_name, blob_match.group('container'))
+    start_blob_copy(source_storage_acct['resourceGroup'], source_storage_acct_name, blob_match.group('container'), blob_match.group('blob'), blob_snapshot['snapshot'], temp_storage_account_name)
+    temp_blob_uri ='https://{0}.blob.core.windows.net/{1}/{2}'.format(temp_storage_account_name, blob_match.group('container'), blob_match.group('blob'))
     # TODO: for very long running copies, it might be better to register a function + event grid listener, but this works to start
     while True:
-      blob_copy_status = get_blob_copy(temp_blob_uri)['properties']['copy']['status']
-      logger.info('%s: Waiting for %s to copy. Current status is %s', time.ctime(), temp_blob, blob_copy_status)
-      if blob_copy_status == 'success':
+      temp_blob = get_storage_blob(temp_blob_uri)
+      copy_status = temp_blob['properties']['copy']['status']
+      logger.info('%s: Waiting for %s to copy. Current status is %s', time.ctime(), temp_blob['name'], copy_status)
+      if copy_status == 'success':
         break
       time.sleep(5)
 
     # Create a disk from the temporary blob
-    disk = create_disk_from_blob(temp_blob_uri)
+    disk = create_disk_from_blob(temp_blob_uri, target_resource_group_name, target_disk_name, target_disk_sku)
     return disk
 
   # # Write map of VHD->managed disk to OUTPUT_FILE_PATH
