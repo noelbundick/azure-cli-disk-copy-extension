@@ -2,6 +2,8 @@
 
 ## Commands
 
+Ideas - not set in stone. All of this should move to the extension help when the functionality is written
+
 ```bash
 # Copy VHD to VHD (same or cross-region)
 # * Snapshot https://foo.blob.core.windows.net/vhds/myDisk.vhd
