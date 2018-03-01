@@ -30,6 +30,8 @@ class DiskCopyCommandsLoader(AzCommandsLoader):
         
         with self.argument_context('storage blob copy-to-disk') as c:
             c.argument('source_vhd_uri', options_list=['--source-uri', '-u'])
+        with self.argument_context('storage blob copy-to-disk', arg_group='Temporary Storage Account') as c:
+            c.argument('temp_storage_account_name', options_list=['--temp-storage-account'])
         with self.argument_context('storage blob copy-to-disk', arg_group='Destination Disk') as c:
             c.argument('target_resource_group_name', options_list=['--resource-group', '-g'])
             c.argument('target_disk_name', options_list=['--disk-name', '-n'])
