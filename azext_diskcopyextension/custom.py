@@ -1,14 +1,16 @@
 import random
-import time
 import re
-from .cli_utils import az_cli
-from knack.util import CLIError
+import time
+
 from knack.log import get_logger
+from knack.util import CLIError
+
+from .cli_utils import az_cli
 
 logger = get_logger(__name__)
 blob_regex = re.compile('https://(?P<storage_account>.*).blob.core.windows.net/(?P<container>.*)/(?P<blob>.*)')
 # TODO: handle blob paths with slashes in the name
-file_regex = re.compile('(?P<filename>.*)\.(?P<extension>.*)')
+file_regex = re.compile(r'(?P<filename>.*)\.(?P<extension>.*)')
 
 def assert_resource_group(resource_group_name):
   logger.info('Retrieving details for resource group %s', resource_group_name)
@@ -64,6 +66,7 @@ def create_snapshot_from_blob(snapshot_name, resource_group_name, blob_uri):
   snapshot = az_cli(['snapshot', 'create',
                       '-n', snapshot_name,
                       '-g', resource_group_name,
+                      '--tags', 'disk-copy-temp',
                       '--source', blob_uri])
   return snapshot
 
@@ -99,6 +102,7 @@ def create_or_use_storage_account(storage_account_name, resource_group_name):
                             '-g', resource_group_name,
                             '--sku', 'Standard_LRS',
                             '--https-only', 'true',
+                            '--tags', 'disk-copy-temp',
                             '--encryption-services', 'blob'])
   return storage_account
 
@@ -132,7 +136,6 @@ def get_storage_blob(blob_uri):
   storage_container = blob_match.group('container')
   blob_name = blob_match.group('blob')
 
-  
   env = {}
   env['AZURE_STORAGE_ACCOUNT'] = storage_account_name
   blob = az_cli(['storage', 'blob', 'show',
@@ -148,14 +151,36 @@ def get_matching_disk_sku(source_storage_acct):
     disk_sku = 'Standard_LRS'
   return disk_sku
 
+def delete_resource(resource_id):
+  logger.info('Deleting resource %s', resource_id)
+  az_cli(['resource', 'delete',
+          '--ids', resource_id])
+
+def delete_blob_snapshot(blob_uri, snapshot):
+  logger.info('Deleting blob snapshot %s - %s', blob_uri, snapshot)
+  blob_match = blob_regex.match(blob_uri)
+  storage_account_name = blob_match.group('storage_account')
+  storage_container = blob_match.group('container')
+  blob_name = blob_match.group('blob')
+
+  env = {}
+  env['AZURE_STORAGE_ACCOUNT'] = storage_account_name
+  az_cli(['storage', 'blob', 'delete',
+          '-c', storage_container,
+          '-n', blob_name,
+          '--snapshot', snapshot], env=env)
+
 def sameregion_copy_vhd_to_disk(source_vhd_uri, source_storage_acct, target_resource_group_name, target_disk_name, target_disk_sku):
   logger.info('Copying within the same region (%s)', source_storage_acct['location'])
 
   # Create a disk from a snapshot
   snapshot_name = 'snapshot_{0}'.format(random.randint(0, 100000))
-  #TODO: tag snapshot as transient
   snapshot = create_snapshot_from_blob(snapshot_name, source_storage_acct['resourceGroup'], source_vhd_uri)
   disk = create_disk_from_snapshot(snapshot['id'], target_resource_group_name, target_disk_name, target_disk_sku)
+
+  # Clean up snapshot
+  delete_resource(snapshot['id'])
+
   return disk
 
 def crossregion_copy_vhd_to_disk(source_vhd_uri, blob_match, source_storage_acct, 
@@ -164,14 +189,15 @@ def crossregion_copy_vhd_to_disk(source_vhd_uri, blob_match, source_storage_acct
   logger.info('Performing a cross-region copy (%s to %s)', source_storage_acct['location'], target_rg['location'])
 
   # Create a blob snapshot
-  #TODO: make sure to clean up snapshot
   blob_snapshot = create_blob_snapshot(source_vhd_uri)
 
   # Copy the blob snapshot to a temporary storage account
+  temp_storage_created = False
   if temp_storage_account_name is None:
     # TODO: reuse a temp storage account if one isn't specified & one already exists in the target RG. Use tags
     temp_storage_account_name = 'diskcopytemp{0}'.format(random.randint(0, 100000))
-  temp_storage_account = create_or_use_storage_account(temp_storage_account_name, target_rg['name'])
+    temp_storage_created = True
+  temp_storage_acct = create_or_use_storage_account(temp_storage_account_name, target_rg['name'])
   create_blob_container(temp_storage_account_name, blob_match.group('container'))
   start_blob_copy(source_storage_acct['resourceGroup'], source_storage_acct['name'], blob_match.group('container'), blob_match.group('blob'), blob_snapshot['snapshot'], temp_storage_account_name)
   temp_blob_uri ='https://{0}.blob.core.windows.net/{1}/{2}'.format(temp_storage_account_name, blob_match.group('container'), blob_match.group('blob'))
@@ -187,6 +213,14 @@ def crossregion_copy_vhd_to_disk(source_vhd_uri, blob_match, source_storage_acct
 
   # Create a disk from the temporary blob
   disk = create_disk_from_blob(temp_blob_uri, target_rg['name'], target_disk_name, target_disk_sku)
+
+  # Clean up blob snapshot
+  delete_blob_snapshot(source_vhd_uri, blob_snapshot['snapshot'])
+
+  # Clean up temp storage account if auto-created
+  if temp_storage_created:
+    delete_resource(temp_storage_acct['id'])
+
   return disk
 
 def copy_vhd_to_vhd(source_vhd_uri, target_storage_account_name, target_storage_container_name, target_vhd_name):

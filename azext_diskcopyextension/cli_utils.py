@@ -3,13 +3,13 @@
 # Licensed under the MIT License. See License.txt in the project root for license information.
 # --------------------------------------------------------------------------------------------
 
-import sys
 import json
-
-from subprocess import check_output, STDOUT, CalledProcessError
-from knack.util import CLIError
+import sys
+from subprocess import STDOUT, CalledProcessError, check_output
 
 from knack.log import get_logger
+from knack.util import CLIError
+
 logger = get_logger(__name__)
 
 def az_cli(cmd, env=None):
@@ -52,6 +52,13 @@ def prepare_cli_command(cmd, output_as_json=True):
 
     # tag newly created resources, containers don't have tags
     if 'create' in cmd and ('container' not in cmd):
-        full_cmd += ['--tags', 'created_by=disk-copy-extension']
+        create_tags = True
+        for idx, arg in enumerate(cmd):
+            if arg == '--tags':
+                create_tags = False
+                cmd[idx+1] = cmd[idx+1] + ' created_by=disk-copy-extension'
+        
+        if not create_tags:
+            full_cmd += ['--tags', 'created_by=disk-copy-extension']
 
     return full_cmd
