@@ -27,7 +27,7 @@ CLASSIFIERS = [
 DEPENDENCIES = []
 
 setup(
-    name='disk-copy-extension',
+    name='disk-copy',
     version=VERSION,
     description='An Azure CLI extension that copies VM disks.',
     long_description='An Azure CLI extension that copies VM disks.',
