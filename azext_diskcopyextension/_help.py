@@ -18,7 +18,7 @@ helps['storage blob copy-to-disk'] = """
           short-summary: Name of resource group
         - name: --sku
           type: string
-          short-summary: short-summary: (Optional) Underlying storage SKU for the new disk. Uses the SKU of the source storage account if not provided.
+          short-summary: (Optional) Underlying storage SKU for the new disk. Uses the SKU of the source storage account if not provided.
         - name: --temp-storage-account
           type: string
           short-summary: (Optional) Temporary storage account to be used for cross-region copies. Created dynamically if not provided.
