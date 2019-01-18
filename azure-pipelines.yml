@@ -5,7 +5,7 @@ steps:
 - task: stevedower.python.BuildWheel.BuildWheel@1
   inputs:
     dependencies: pip setuptools wheel==0.30.0 cython
-    setuppy: 'azext_diskcopyextension/setup.py'
+    setuppy: 'setup.py'
     signcmd: 'bdist_wheel'
 - task: PublishBuildArtifacts@1
   inputs:
