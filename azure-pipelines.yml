@@ -1,0 +1,14 @@
+pool:
+  vmImage: 'Hosted VS2017'
+
+steps:
+- task: stevedower.python.BuildWheel.BuildWheel@1
+  inputs:
+    dependencies: pip setuptools wheel==0.30.0 cython
+    setuppy: 'azext_diskcopyextension/setup.py'
+    signcmd: 'bdist_wheel'
+- task: PublishBuildArtifacts@1
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: drop
+    publishLocation: Container

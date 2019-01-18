@@ -38,8 +38,8 @@ class DiskCopyCommandsLoader(AzCommandsLoader):
             c.argument('target_disk_sku', options_list=['--sku'], arg_type=get_enum_type(['Premium_LRS', 'Standard_LRS']))
 
         with self.argument_context('disk copy-to-vhd') as c:
-            c.argument('source_resource_group_name', options_list=['--source-resource-group'])
-            c.argument('source_disk_name', options_list=['--source-disk-name'])
+            c.argument('source_resource_group_name', options_list=['--source-resource-group', '-g'])
+            c.argument('source_disk_name', options_list=['--source-disk-name', '-n'])
         with self.argument_context('disk copy-to-vhd', arg_group='Destination VHD') as c:
             c.argument('target_storage_account_name', options_list=['--account-name'])
             c.argument('target_storage_container_name', options_list=['--destination-container', '-c'])

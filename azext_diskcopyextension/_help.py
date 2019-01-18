@@ -1,5 +1,30 @@
 from knack.help_files import helps
 
+helps['storage blob copy-to-vhd'] = """
+    type: command
+    short-summary: Copy a Virtual Machine disk
+    long-summary: >
+        Takes a snapshot of a VHD blob and creates a new disk from it. 
+        Supports cross-region copies.
+    parameters:
+        - name: --source-uri -u
+          type: string
+          short-summary: Unmanaged disk blob URL
+        - name: --account-name
+          type: string
+          short-summary: Name of storage account for the new disk
+        - name: --destination-container -c
+          type: string
+          short-summary: Storage container to place the new disk in
+        - name: --destination-blob -b
+          type: string
+          short-summary: Name for the new disk
+    examples:
+        - name: Copy an unmanaged disk to an unmanaged disk
+          text: >
+            az storage blob copy-to-vhd -u https://mystorage.blob.core.windows.net/vhds/my-disk.vhd -g my-local-rg --account-name mystorage2 -c disks -b my-disk.vhd
+"""
+
 helps['storage blob copy-to-disk'] = """
     type: command
     short-summary: Copy a Virtual Machine disk
@@ -60,7 +85,35 @@ helps['disk copy-to-disk'] = """
         - name: Copy a Managed Disk to a Managed Disk
           text: >
             az disk copy-to-disk -n mydisk -g my-source-rg --target-resource-group my-local-rg
-        - name: Copy a Nanaged Disk to a Managed Disk across regions with a specified temporary storage account
+        - name: Copy a Managed Disk to a Managed Disk across regions with a specified temporary storage account
           text: >
             az disk copy-to-disk -n mydisk -g my-source-rg --target-resource-group my-remote-rg --temp-storage diskcopytemp123
+"""
+
+helps['disk copy-to-vhd'] = """
+    type: command
+    short-summary: Copy a Virtual Machine disk
+    long-summary: >
+        Takes a snapshot of a Managed Disk and creates a new vhd blob from it. 
+        Supports cross-region copies.
+    parameters:
+        - name: --source-disk-name -n
+          type: string
+          short-summary: Name of the source disk
+        - name: --source-resource-group -g
+          type: string
+          short-summary: Name of resource group for the source disk
+        - name: --account-name
+          type: string
+          short-summary: Name of storage account for the new disk
+        - name: --destination-container -c
+          type: string
+          short-summary: Storage container to place the new disk in
+        - name: --destination-blob -b
+          type: string
+          short-summary: Name for the new disk
+    examples:
+        - name: Copy a Managed Disk to an unmanaged disk
+          text: >
+            az disk copy-to-vhd -n mydisk -g my-source-rg --account-name mystorage -c disks -b mydisk.vhd
 """
